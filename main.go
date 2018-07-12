@@ -60,6 +60,12 @@ func runServer(args []string) {
 	if err != nil {
 		log.Fatal("listen error:", err)
 	}
+	cleanupOnSigTerm(listener)
+	server.Accept(listener)
+	log.Println("server done")
+}
+
+func cleanupOnSigTerm(listener net.Listener) {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -69,10 +75,9 @@ func runServer(args []string) {
 			log.Fatal("listener close error:", err)
 			os.Exit(1)
 		}
+		log.Println("listener closed")
 		os.Exit(0)
 	}()
-	server.Accept(listener)
-	log.Println("server done")
 }
 
 // Calculator can add
