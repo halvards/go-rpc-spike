@@ -15,30 +15,81 @@
 package main
 
 import (
-	"fmt"
+	"errors"
+	"log"
+	"net"
+	"net/rpc"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
+
+const socketAddr = "/tmp/calculator.sock"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Run as client or server")
-		os.Exit(1)
+		log.Fatal("Run as client or server")
 	}
 	if strings.HasPrefix(os.Args[1], "c") {
-		client(os.Args[2:])
+		runClient(os.Args[2:])
 	} else if strings.HasPrefix(os.Args[1], "s") {
-		server(os.Args[2:])
+		runServer(os.Args[2:])
 	} else {
-		fmt.Println("Run as client or server")
-		os.Exit(1)
+		log.Fatal("Run as client or server")
 	}
 }
 
-func client(args []string) {
-	fmt.Printf("Client: %v\n", args)
+func runClient(args []string) {
+	log.Printf("Client: %v\n", args)
+	client, err := rpc.Dial("unix", socketAddr)
+	if err != nil {
+		log.Fatal("dial error:", err)
+	}
+	in := &Input{1, 2}
+	var out int
+	client.Call("Calculator.Add", in, &out)
+	log.Printf("Result: %v", out)
 }
 
-func server(args []string) {
-	fmt.Printf("Server: %v\n", args)
+func runServer(args []string) {
+	log.Printf("Server: %v\n", args)
+	server := rpc.NewServer()
+	server.Register(new(Calculator))
+	listener, err := net.Listen("unix", socketAddr)
+	if err != nil {
+		log.Fatal("listen error:", err)
+	}
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		err := listener.Close()
+		if err != nil {
+			log.Fatal("listener close error:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}()
+	server.Accept(listener)
+	log.Println("server done")
+}
+
+// Calculator can add
+type Calculator int
+
+// Input to add
+type Input struct {
+	A, B int
+}
+
+// Add integers
+func (t *Calculator) Add(in *Input, out *int) error {
+	log.Printf("Adding %v and %v", in.A, in.B)
+	if in == nil {
+		return errors.New("must supply input")
+	}
+	*out = in.A + in.B
+	log.Printf("out: %v", *out)
+	return nil
 }
